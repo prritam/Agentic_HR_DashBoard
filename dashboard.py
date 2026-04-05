@@ -1,140 +1,108 @@
 import streamlit as st
 import requests
 import core.database as db
-from agents.communicator import CommunicatorAgent
-from core.mailer import send_real_email
 
-# --- Page Config ---
-st.set_page_config(page_title="Agentic HR Portal", layout="wide", page_icon="🤖")
-
-# Initialize DB and Agents
 db.init_db()
-comm_agent = CommunicatorAgent()
+from core.database import create_job
 
-# --- Check URL for Job Link (Candidate Mode) ---
+# --- GET JOB ID FROM URL ---
 query_params = st.query_params
-job_id_url = query_params.get("job")
+job_id = query_params.get("job")
 
-if job_id_url:
-    # ---------------------------------------------------------
-    # CANDIDATE VIEW: The Shared LinkedIn Form
-    # ---------------------------------------------------------
-    job_info = db.get_job(job_id_url)
+if not job_id:
+    # HR Dashboard
+    st.title("HR Dashboard - Create Job")
     
-    if job_info:
-        st.title(f"Apply for: {job_info[0]}")
-        st.info(f"**Requirements:** {job_info[1]} | **Min Experience:** {job_info[2]} Years")
-        
-        with st.form("candidate_apply"):
-            col1, col2 = st.columns(2)
-            with col1:
-                name = st.text_input("Full Name*")
-                email = st.text_input("Email*")
-                mobile = st.text_input("Mobile Number*")
-                employer = st.text_input("Current Employer")
-            with col2:
-                c_ctc = st.number_input("Current CTC (LPA)", min_value=0.0)
-                e_ctc = st.number_input("Expected CTC (LPA)", min_value=0.0)
-                notice = st.selectbox("Notice Period", ["Immediate", "30 Days", "60 Days", "90 Days"])
-                lwd = st.text_input("Last Working Day (if serving)", value="N/A")
-            
-            uploaded_file = st.file_uploader("Upload Resume (PDF only)*", type="pdf")
-            
-            submit_btn = st.form_submit_button("Submit Application")
-            
-            if submit_btn:
-                if not uploaded_file or not name or not email:
-                    st.error("Please fill in all required fields and upload your resume.")
-                else:
-                    with st.spinner("AI Agent is analyzing your application via Backend..."):
-                        # Prepare data for FastAPI
-                        files = {"resume": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
-                        payload = {
-                            "name": name,
-                            "email": email,
-                            "mobile": mobile,
-                            "current_employer": employer,
-                            "current_ctc": c_ctc,
-                            "expected_ctc": e_ctc,
-                            "notice_period": notice,
-                            "last_working_day": lwd
-                        }
-                        
-                        try:
-                            # CALLING THE FASTAPI BACKEND
-                            response = requests.post(
-                                f"http://localhost:8000/submit_application/{job_id_url}", 
-                                data=payload, 
-                                files=files
-                            )
-                            
-                            if response.status_code == 200:
-                                st.success(f"✅ Success! AI Scored your profile: {response.json().get('score')}/100")
-                                st.balloons()
-                            else:
-                                st.error(f"Backend Error: {response.text}")
-                        except Exception as e:
-                            st.error(f"Could not connect to FastAPI Backend. Is it running? Error: {e}")
-    else:
-        st.error("Invalid Job Link. Please check the URL.")
-
-else:
-    # ---------------------------------------------------------
-    # HR VIEW: The Management Dashboard
-    # ---------------------------------------------------------
-    st.title("🤖 HR Agentic Control Center")
+    title = st.text_input("Job Title")
+    description = st.text_area("Job Description")
+    experience = st.number_input("Required Experience (years)", min_value=0)
     
-    tab1, tab2 = st.tabs(["🏗️ Create Job Posting", "📊 Leaderboard & Actions"])
-
-    with tab1:
-        st.header("Post a New Job to LinkedIn")
-        with st.container(border=True):
-            j_title = st.text_input("Job Title", placeholder="e.g. Senior Python Developer")
-            j_exp = st.number_input("Required Experience (Years)", min_value=0, max_value=40)
-            j_desc = st.text_area("Detailed Job Description")
-            
-            if st.button("Generate Shared Form Link"):
-                if j_title and j_desc:
-                    new_id = db.create_job(j_title, j_desc, j_exp)
-                    # This link uses the Streamlit URL + the Job ID
-                    share_link = f"http://localhost:8501/?job={new_id}"
-                    st.success("Job Created Successfully!")
-                    st.code(share_link, language="text")
-                else:
-                    st.warning("Please provide a Title and Description.")
-
-    with tab2:
-        st.header("Candidate Leaderboard")
-        candidates = db.get_leaderboard()
-        
-        if not candidates:
-            st.write("No applications found in the database.")
+    if st.button("Create Job"):
+        if title and description:
+            job_id_new = create_job(title, description, experience)
+            link = f"http://localhost:8501/?job={job_id_new}"
+            st.success("Job created!")
+            st.write("Share this link with candidates:")
+            st.code(link, language="text")
         else:
-            for rank, c in enumerate(candidates, 1):
-                # c = (name, score, reason, email, lwd)
-                name, score, justification, email, lwd = c
-                
-                with st.expander(f"Rank #{rank}: {name} (Score: {score}/100)"):
-                    st.write(f"**Last Working Day:** {lwd}")
-                    st.write(f"**AI Evaluation:** {justification}")
-                    st.write(f"**Email:** {email}")
-                    
-                    st.divider()
-                    
-                    # HR Actions (Human-in-the-loop)
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        if st.button(f"📧 Send Assessment to {name}", key=f"as_{rank}"):
-                            with st.spinner("Agent drafting email..."):
-                                body = comm_agent.draft_assessment(name, "Python Developer")
-                                status = send_real_email(email, "Technical Assessment Invitation", body)
-                                st.toast(status)
-                                st.info(body)
-                    
-                    with col_b:
-                        if st.button(f"📅 Invite {name} to Interview", key=f"int_{rank}"):
-                            with st.spinner("Agent drafting invite..."):
-                                body = comm_agent.draft_interview(name, "Next Monday at 2 PM")
-                                status = send_real_email(email, "Interview Invitation", body)
-                                st.toast(status)
-                                st.info(body)
+            st.error("Please fill all fields.")
+    
+    # View Candidates
+    if st.button("View Candidates"):
+        candidates = db.get_leaderboard()
+        if candidates:
+            st.subheader("Candidate Leaderboard")
+            for i, (name, score, reason, email, lwd, job_title) in enumerate(candidates, 1):
+                st.write(f"{i}. {name} ({job_title}) - Score: {score}/100 - {reason}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"Send Assessment Invite to {name}", key=f"assess_{i}"):
+                        from agents.communicator import CommunicatorAgent
+                        comm = CommunicatorAgent()
+                        email_body = comm.draft_assessment(name, job_title)
+                        from core.mailer import send_real_email
+                        result = send_real_email(email, "Technical Assessment Invite", email_body)
+                        if "Email sent" in result:
+                            st.success(f"Invite sent to {email}")
+                        else:
+                            st.error(f"Failed to send: {result}")
+                with col2:
+                    if st.button(f"Send Interview Invite to {name}", key=f"interview_{i}"):
+                        comm = CommunicatorAgent()
+                        email_body = comm.draft_interview(name, "Tomorrow at 10 AM")
+                        result = send_real_email(email, "Interview Invite", email_body)
+                        if "Email sent" in result:
+                            st.success(f"Interview invite sent to {email}")
+                        else:
+                            st.error(f"Failed to send: {result}")
+        else:
+            st.write("No candidates yet.")
+else:
+    # Application Form
+    st.title(f"Application Form (Job ID: {job_id})")
+    
+    name = st.text_input("Full Name")
+    email = st.text_input("Email")
+    mobile = st.text_input("Mobile Number")
+    current_employer = st.text_input("Current Employer")
+    current_ctc = st.number_input("Current CTC (in LPA)", min_value=0.0)
+    expected_ctc = st.number_input("Expected CTC (in LPA)", min_value=0.0)
+    notice_period = st.text_input("Notice Period")
+    if notice_period and ("serving" in notice_period.lower() or "days" in notice_period.lower()):
+        last_working_day = st.text_input("Last Working Day (YYYY-MM-DD)")
+    else:
+        last_working_day = "N/A"
+    resume_file = st.file_uploader("Upload Resume (PDF)", type="pdf")
+    
+    if st.button("Submit Application"):
+        if not all([name, email, mobile, current_employer, resume_file]):
+            st.error("Please fill all required fields.")
+        else:
+            # Prepare Data
+            data = {
+                "name": name,
+                "email": email,
+                "mobile": mobile,
+                "current_employer": current_employer,
+                "current_ctc": current_ctc,
+                "expected_ctc": expected_ctc,
+                "notice_period": notice_period,
+                "last_working_day": last_working_day
+            }
+            
+            files = {"resume": (resume_file.name, resume_file.getvalue(), "application/pdf")}
+            
+            # Submit to API
+            with st.spinner("Submitting application..."):
+                try:
+                    response = requests.post(
+                        f"http://127.0.0.1:8000/submit_application/{job_id}", 
+                        data=data, 
+                        files=files
+                    )
+                    if response.status_code == 200:
+                        st.success("Application submitted successfully! HR will review and contact you if shortlisted.")
+                    else:
+                        st.error(f"Submission failed: {response.text}")
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")

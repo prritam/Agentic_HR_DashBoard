@@ -7,7 +7,7 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 try:
-    from core.database import init_db, save_candidate, get_leaderboard
+    from core.database import init_db, save_candidate, get_leaderboard, create_job
     from agents.parser import ParserAgent
     from agents.evaluator import EvaluatorAgent
 except ImportError as e:
@@ -17,7 +17,7 @@ except ImportError as e:
     print(f"Python Path: {sys.path}")
     sys.exit(1)
 
-def process_new_application(resume_text, job_requirement):
+def process_new_application(resume_text, job_requirement, job_id):
     # Initialize agents
     parser = ParserAgent()
     evaluator = EvaluatorAgent()
@@ -38,7 +38,7 @@ def process_new_application(resume_text, job_requirement):
         score, reason = 0, "Evaluation format error"
 
     # Step 4: Save to DB (Binding the candidate)
-    save_candidate(candidate_data, score, reason.strip())
+    save_candidate(candidate_data, score, reason.strip(), job_id)
     print("Candidate successfully added to Leaderboard.")
 
 if __name__ == "__main__":
@@ -46,6 +46,7 @@ if __name__ == "__main__":
     
     # HR Input
     jd = "Python developer with 2+ years exp and knowledge of SQL."
+    job_id = create_job("Python Developer", jd, 2)
     
     # Simulated LinkedIn Form Submission
     resume_input = """
@@ -53,7 +54,7 @@ if __name__ == "__main__":
     Current CTC: 8L. Expected: 12L. Notice: 30 days.
     """
     
-    process_new_application(resume_input, jd)
+    process_new_application(resume_input, jd, job_id)
     
     # Show Leaderboard
     print("\n--- HR DASHBOARD: CANDIDATE LEADERBOARD ---")
