@@ -28,34 +28,36 @@ def get_job(job_id):
         cursor.execute("SELECT title, description, required_experience FROM jobs WHERE job_id = ?", (job_id,))
         return cursor.fetchone()
 
+def get_candidate_history(email):
+    # Retrieve past applications to check for consistency
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT job_id, ai_score, ai_justification FROM candidates WHERE email = ?", (email,))
+        return cursor.fetchall()
+
 def save_candidate(data, score, reason, job_id):
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
-        # Count carefully: 
-        # Columns (11): job_id, name, email, mobile, current_employer, current_ctc, 
-        #               expected_ctc, notice_period, last_working_day, ai_score, ai_justification
-        cursor.execute('''INSERT INTO candidates (
-            job_id, name, email, mobile, current_employer, 
-            current_ctc, expected_ctc, notice_period, last_working_day, 
-            ai_score, ai_justification
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', # Exactly 11 question marks
-        (
-            job_id, 
-            data['name'], 
-            data['email'], 
-            data['mobile'], 
-            data['current_employer'],
-            data['current_ctc'], 
-            data['expected_ctc'], 
-            data['notice_period'], 
-            data['last_working_day'], 
-            score, 
-            reason
-        ))
+        cursor.execute('''INSERT INTO candidates (job_id, name, email, mobile, current_employer, 
+            current_ctc, expected_ctc, notice_period, last_working_day, ai_score, ai_justification)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+            (job_id, data['name'], data['email'], data['mobile'], data['current_employer'],
+             data['current_ctc'], data['expected_ctc'], data['notice_period'], 
+             data['last_working_day'], score, reason))
         conn.commit()
 
 def get_leaderboard():
+    """
+    Retrieves all candidates from the database, ordered by their AI score.
+    Used by dashboard.py to display the HR table.
+    """
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT name, ai_score, ai_justification, email, last_working_day FROM candidates ORDER BY ai_score DESC")
+        # Ensure the column names match exactly what your dashboard.py expects
+        cursor.execute("""
+            SELECT c.name, c.ai_score, c.ai_justification, c.email, c.last_working_day, j.title
+            FROM candidates c
+            JOIN jobs j ON c.job_id = j.job_id
+            ORDER BY c.ai_score DESC
+        """)
         return cursor.fetchall()
