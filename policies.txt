@@ -1,0 +1,5 @@
+POLICY_ID_001: We prioritize candidates who have experience with both FastAPI and SQL Alchemy.
+POLICY_ID_002: For Junior roles, a notice period of up to 60 days is acceptable. For Senior roles, we strictly prefer immediate joiners or under 30 days.
+POLICY_ID_003: Candidates must mention at least one personal project or a GitHub link to be considered for a technical interview.
+POLICY_ID_004: We offer a 10% bonus on Expected CTC if the candidate is willing to relocate to Bengaluru or Pune.
+POLICY_ID_005: Any candidate serving a notice period must provide their exact Last Working Day (LWD) for onboarding synchronization.

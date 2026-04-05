@@ -7,11 +7,14 @@ class AgentState(TypedDict):
     form_data: dict
     job_id: str
     
+    # RAG Data
+    relevant_policies: List[str]
+    
     # Internal working data
     score: Optional[int]
     reason: Optional[str]
-    decision: Optional[str]  # "save", "retry", or "end"
+    decision: Optional[str] 
     
-    # Tracking for loops
+    # Tracking
     errors: List[str]
     attempts: int

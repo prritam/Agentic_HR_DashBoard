@@ -1,24 +1,55 @@
 import json
 import re
+import chromadb
+import ollama
 from core.ollama_client import ask_llama
 
 class GraphNodes:
     def __init__(self):
-        self.system_role = "You are an AI Recruitment Specialist."
+        self.system_role = "You are an AI Recruitment Specialist following strict company policies."
+        # Connect to the database created by your indexer script
+        self.chroma_client = chromadb.PersistentClient(path="./company_knowledge")
+        self.collection = self.chroma_client.get_collection(name="hiring_policies")
+
+    def retrieval_node(self, state: dict):
+        """Step 1: Search the knowledge base for relevant rules."""
+        print("--- EXECUTING RETRIEVAL NODE (RAG) ---")
+        
+        # Search using the job description to find matching rules
+        query_text = f"{state['job_description']}"
+        query_emb = ollama.embeddings(model="llama2", prompt=query_text)["embedding"]
+        
+        results = self.collection.query(
+            query_embeddings=[query_emb], 
+            n_results=3
+        )
+        
+        policies = results.get("documents", [[]])[0]
+        # Return the found policies to the shared state
+        return {"relevant_policies": policies}
 
     def scorer_node(self, state: dict):
-        # Node to evaluate and score the resume
+        """Step 2: Evaluate resume using retrieved policies."""
         print("--- EXECUTING SCORER NODE ---")
         
-        error_context = f"\nPrevious Error to fix: {state['errors'][-1]}" if state['errors'] else ""
+        policy_context = "\n".join([f"- {p}" for p in state['relevant_policies']])
         
         prompt = f"""
-        Score this resume against the requirements.
-        Requirements: {state['job_description']}
-        Resume: {state['resume_text']}
-        {error_context}
+        Evaluate the candidate based on the Resume AND the Mandatory Company Policies.
         
-        Return ONLY valid JSON: {{"score": 85, "reason": "Text..."}}
+        MANDATORY POLICIES:
+        {policy_context}
+        
+        JOB DESCRIPTION:
+        {state['job_description']}
+        
+        RESUME TEXT:
+        {state['resume_text']}
+        
+        TASK:
+        1. Score 0-100.
+        2. If a Mandatory Policy is violated, the score MUST be below 50.
+        3. Return ONLY valid JSON: {{"score": 85, "reason": "Text..."}}
         """
         
         response = ask_llama(prompt, system_role=self.system_role)
@@ -34,18 +65,9 @@ class GraphNodes:
             return {"errors": [f"JSON Parse Error: {str(e)}"], "attempts": state["attempts"] + 1}
 
     def validator_node(self, state: dict):
-        # Node to check if the evaluation was successful and logical
+        """Step 3: Business logic validation."""
         print("--- EXECUTING VALIDATOR NODE ---")
-        
-        # Check for errors from the scorer
         if state.get("errors") and len(state["errors"]) > state["attempts"] - 1:
             return {"decision": "retry"}
-            
-        # Logic check: If score is very high but reason is too short
-        if state["score"] > 90 and len(state["reason"]) < 20:
-            return {
-                "decision": "retry", 
-                "errors": state["errors"] + ["Reason is too short for a high score."]
-            }
             
         return {"decision": "save"}
